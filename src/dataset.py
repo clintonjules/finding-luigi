@@ -1,7 +1,8 @@
 import numpy as np
 from PIL import Image
 import random
-   
+import os
+import math
 
 # Both methods to count the number of non-zero alpha pixels in an image seem off
 # The second one is more accurate but still not perfect
@@ -36,6 +37,37 @@ def get_non_transparent_pixels(image: Image.Image, height: int = None, width: in
         (x, y) for y in range(height) for x in range(width)
         if image_array[y, x, 3] > 0  # Check alpha channel for non-transparent pixels
     )
+    
+def generate_permutations_excluding_overlay(input_filepaths, excluded_overlay):
+    """
+    Generate permutations where one file acts as the base, and others are overlays,
+    excluding a specific file from being an overlay.
+
+    Args:
+        input_filepaths (list[str]): List of file paths.
+        excluded_overlay (str): Filepath to exclude from being used as an overlay.
+
+    Returns:
+        list[tuple[str, list[str]]]: List of tuples where each tuple contains:
+            - The base image filepath.
+            - A list of overlay image filepaths.
+    """
+    # Filter out the excluded overlay from the input filepaths
+    valid_overlays = [filepath for filepath in input_filepaths if filepath != excluded_overlay]
+
+    # Generate permutations
+    permutations_list = []
+    for base in input_filepaths:
+        if base == excluded_overlay:
+            # Skip the excluded file from being an overlay
+            overlays = valid_overlays
+        else:
+            # All files except the current base and the excluded overlay
+            overlays = [filepath for filepath in input_filepaths if filepath != base and filepath != excluded_overlay]
+
+        permutations_list.append((base, overlays))
+
+    return permutations_list
 
 def random_overlay(base_image_path: str, overlay_image_path: str, output_image_path: str = None, return_overlay_values: bool = False) -> tuple[Image.Image, int, int]:
     # Open the base image
@@ -91,8 +123,8 @@ def random_overlay(base_image_path: str, overlay_image_path: str, output_image_p
 
 
 def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, output_image_path: str = None, 
-                            max_overlap_percentage: float = 0.5, max_retries: int = 10, 
-                            max_base_coverage: float = 0.8, return_overlay_values: bool = False) -> Image.Image:
+                            max_overlap_percentage: float = 0.5, max_retries: int = 20, 
+                            max_base_coverage: float = 0.8, return_overlay_values: bool = False, **kwargs) -> Image.Image:
     """
     Overlay multiple images randomly on top of a base image while limiting overlap percentage and base coverage.
 
@@ -221,3 +253,56 @@ def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, out
         return combined_image, {base_image_path: {"base_image_area": base_image_area, "base_coverage_percentage": base_coverage_percentage}}, overlapping_values
 
     return combined_image
+
+
+def generate_random_image_subset(base_image_path: str, overlay_image_paths: str, output_dir: str, num_samples: int=10, max_overlap_range: tuple=(0.0, 0.6), max_base_coverage_range: tuple=(0.0, 0.8), **kwargs):
+    """
+    Generate images with overlays applied to a base image using random_overlay_multiple.
+
+    Args:
+        base_image_path (str): Path to the base image.
+        overlay_image_paths (list): List of overlay image paths.
+        output_dir (str): Directory to save the generated images.
+        num_samples (int): Number of samples to generate.
+        **kwargs: Additional keyword arguments for random_overlay_multiple.
+
+    Returns:
+        None
+    """
+    # Create the output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    for i in range(num_samples):
+        # Generate output image path
+        output_file_name = f"{os.path.basename(base_image_path).split('.')[0]}_sample_{i}.png"
+        output_image_path = os.path.join(output_dir, output_file_name)
+        
+        # Randomly select values within the specified ranges
+        max_overlap_percentage = random.uniform(*max_overlap_range)
+        max_base_coverage = random.uniform(*max_base_coverage_range)
+
+        # Call random_overlay_multiple with filtered arguments
+        random_overlay_multiple(
+            base_image_path=base_image_path,
+            overlay_image_paths=overlay_image_paths,
+            output_image_path=output_image_path,
+            max_overlap_percentage=max_overlap_percentage, 
+            max_base_coverage=max_base_coverage,
+            **kwargs
+        )
+
+
+def generate_dataset(image_paths: str, excluded_overlay: str, num_samples: int = 100000, output_dir: str = "data", **kwargs):
+    luigi_dir = os.path.join(output_dir, "luigi")
+    not_luigi_dir = os.path.join(output_dir, "not_luigi")
+
+    os.makedirs(luigi_dir, exist_ok=True)
+    os.makedirs(not_luigi_dir, exist_ok=True)
+    
+    permutations_list = generate_permutations_excluding_overlay(image_paths, excluded_overlay)
+    
+    for base, overlays in permutations_list:
+        if "luigi" in base:
+            generate_random_image_subset(base, overlays, luigi_dir, num_samples=math.floor(num_samples * 1.5), **kwargs)
+        else:
+            generate_random_image_subset(base, overlays, not_luigi_dir, num_samples=num_samples//2, **kwargs)
