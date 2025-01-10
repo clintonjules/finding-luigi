@@ -4,6 +4,8 @@ import random
 import os
 import math
 import pandas as pd
+import itertools
+from tqdm import tqdm
 
 # Both methods to count the number of non-zero alpha pixels in an image seem off
 # The second one is more accurate but still not perfect
@@ -57,7 +59,7 @@ def calculate_bounding_box(visible_pixels):
 
     return x_min, y_min, x_max, y_max
 
-    
+# Doesnt actually make permuatiions, forgot that functionality, woops!
 def generate_permutations_excluding_overlay(input_filepaths, excluded_overlay):
     """
     Generate permutations where one file acts as the base, and others are overlays,
@@ -139,7 +141,7 @@ def random_overlay(base_image_path: str, overlay_image_path: str, output_image_p
 
 
 def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, output_image_path: str = "output.png", 
-                            max_overlap_percentage: float = 0.5, max_retries: int = float("inf"), 
+                            max_overlap_percentage: float = 0.5, max_retries = float("inf"), 
                             max_base_coverage: float = 0.8, **kwargs) -> Image.Image:
     """
     Overlay multiple images randomly on top of a base image while limiting overlap percentage and base coverage.
@@ -164,11 +166,6 @@ def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, out
     )
     base_image_area = len(valid_base_pixels)
     
-    if "luigi" in base_image_path.lower():
-        visible_luigi_pixels = valid_base_pixels.copy()
-    else:
-        visible_luigi_pixels = set()
-
     retries = -1
     base_coverage_percentage = 0
 
@@ -187,6 +184,8 @@ def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, out
 
             while not overlay_placed and overlay_retries < max_retries:
                 overlay_retries += 1
+                
+                visible_luigi_pixels = valid_base_pixels.copy()
 
                 # Open the overlay image
                 overlay_image = Image.open(overlay_image_path).convert("RGBA")
@@ -225,7 +224,7 @@ def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, out
                 
                 # Update Luigi's visible pixels by removing any overwritten by this overlay
                 visible_luigi_pixels -= current_overlay_covered_pixels
-
+                
                 # Check if the overlap is within the allowed threshold
                 if overlap_percentage <= max_overlap_percentage:
                     # Apply the overlay to the combined image
@@ -310,7 +309,7 @@ def generate_random_image_subset_classify(base_image_path: str, overlay_image_pa
         )
 
 
-def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths: str, output_dir: str = 'output', num_samples: int=10, max_overlap_range: tuple=(0.0, 0.6), max_base_coverage_range: tuple=(0.0, 0.8), label='luigi', **kwargs):
+def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths: str, output_dir: str, num_samples: int=1, max_overlap_range: tuple=(0.0, 0.6), max_base_coverage_range: tuple=(0.0, 0.8), label='luigi', **kwargs):
     """
     Generate images with overlays applied to a base image using random_overlay_multiple.
 
@@ -327,7 +326,7 @@ def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths:
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
-    for i in range(num_samples):
+    for i in tqdm(range(num_samples)):
         # Generate output image path
         output_file_name = f"{os.path.basename(base_image_path).split('.')[0]}_sample_{i}.png"
         output_image_path = os.path.join(output_dir, output_file_name)
@@ -347,7 +346,7 @@ def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths:
             max_base_coverage=max_base_coverage,
             **kwargs
         )
-        
+
         bbox = calculate_bounding_box(random_image["visible_luigi_pixels"])
         
         save_image_and_bounding_box_for_fastai(bbox, output_image_path, output_bbox_path, label)
@@ -386,3 +385,10 @@ def save_image_and_bounding_box_for_fastai(bounding_box, output_image_path, meta
         pd.DataFrame([data]).to_csv(metadata_csv_path, index=False)
     else:
         pd.DataFrame([data]).to_csv(metadata_csv_path, mode='a', header=False, index=False)
+    
+def generate_bbox_dataset(base_image_path, overlay_image_paths, num_samples = 10, output_dir: str = "data", **kwargs):
+    os.makedirs(output_dir, exist_ok=True)
+    
+    overlay_permutations = list(itertools.permutations(overlay_image_paths))
+    
+    generate_random_image_subset_bbox(base_image_path, random.choice(overlay_permutations), output_dir, num_samples, **kwargs)    
