@@ -3,3 +3,6 @@ pillow
 fastai
 pathlib
 pandas
+sgmllib3k
+torch
+torchvision

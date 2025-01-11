@@ -324,12 +324,12 @@ def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths:
         None
     """
     # Create the output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir + '/images', exist_ok=True)
 
     for i in tqdm(range(num_samples)):
         # Generate output image path
         output_file_name = f"{os.path.basename(base_image_path).split('.')[0]}_sample_{i}.png"
-        output_image_path = os.path.join(output_dir, output_file_name)
+        output_image_path = os.path.join(output_dir + '/images', output_file_name)
         output_bbox_path = os.path.join(output_dir, "bounding_boxes.csv")
         
         # Randomly select values within the specified ranges
@@ -351,7 +351,6 @@ def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths:
         
         save_image_and_bounding_box_for_fastai(bbox, output_image_path, output_bbox_path, label)
     
-
 
 def generate_classification_dataset(image_paths: str, excluded_overlay: str, num_samples: int = 100000, output_dir: str = "data", **kwargs):
     luigi_dir = os.path.join(output_dir, "luigi")
@@ -385,6 +384,7 @@ def save_image_and_bounding_box_for_fastai(bounding_box, output_image_path, meta
         pd.DataFrame([data]).to_csv(metadata_csv_path, index=False)
     else:
         pd.DataFrame([data]).to_csv(metadata_csv_path, mode='a', header=False, index=False)
+    
     
 def generate_bbox_dataset(base_image_path, overlay_image_paths, num_samples = 10, output_dir: str = "data", **kwargs):
     os.makedirs(output_dir, exist_ok=True)
