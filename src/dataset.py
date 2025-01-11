@@ -142,7 +142,7 @@ def random_overlay(base_image_path: str, overlay_image_path: str, output_image_p
 
 def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, output_image_path: str = "output.png", 
                             max_overlap_percentage: float = 0.5, max_retries = float("inf"), 
-                            max_base_coverage: float = 0.8, **kwargs) -> Image.Image:
+                            max_base_coverage: float = 0.8, hard_cap: bool = True, **kwargs) -> Image.Image:
     """
     Overlay multiple images randomly on top of a base image while limiting overlap percentage and base coverage.
 
@@ -169,15 +169,17 @@ def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, out
     retries = -1
     base_coverage_percentage = 0
 
+    pbar = tqdm(total=max_retries)
     while retries < max_retries:
         retries += 1
-
+        print(f"Retries left: {max_retries - retries}")
+        
         # Reset the combined image and base pixels covered
         combined_image = Image.new("RGBA", (base_width, base_height), (0, 0, 0, 0))
         combined_image.paste(base_image, (0, 0))
         base_pixels_covered = set()  # Store coordinates of covered base pixels
         overlapping_values = {}
-
+        
         for overlay_image_path in overlay_image_paths:
             overlay_placed = False
             overlay_retries = -1
@@ -226,7 +228,7 @@ def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, out
                 visible_luigi_pixels -= current_overlay_covered_pixels
                 
                 # Check if the overlap is within the allowed threshold
-                if overlap_percentage <= max_overlap_percentage:
+                if overlap_percentage <= max_overlap_percentage or not hard_cap:
                     # Apply the overlay to the combined image
                     for x in range(overlay_width):
                         for y in range(overlay_height):
@@ -250,18 +252,22 @@ def random_overlay_multiple(base_image_path: str, overlay_image_paths: list, out
                     }
                     overlay_placed = True
 
-            if not overlay_placed:
+            if (not overlay_placed) and hard_cap:
                 print(f"Warning: Failed to place overlay {overlay_image_path} within {max_retries} retries.")
 
         # Calculate the total base coverage percentage
         valid_base_pixels_covered = base_pixels_covered.intersection(valid_base_pixels)
         base_coverage_percentage = len(valid_base_pixels_covered) / base_image_area
+        
+        pbar.update(1)
 
         # Break if base coverage is within the allowed limit
-        if base_coverage_percentage <= max_base_coverage:
+        if base_coverage_percentage <= max_base_coverage or not hard_cap:
             break
-
-    if base_coverage_percentage > max_base_coverage:
+    
+    pbar.close()
+    
+    if (base_coverage_percentage > max_base_coverage) and hard_cap:
         print(f"Warning: Failed to keep base coverage within {max_base_coverage * 100}% after {retries} retries.")
 
     # Save the resulting image
@@ -287,8 +293,6 @@ def generate_random_image_subset_classify(base_image_path: str, overlay_image_pa
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     
-    visible_luigi_pixels = set()
-
     for i in range(num_samples):
         # Generate output image path
         output_file_name = f"{os.path.basename(base_image_path).split('.')[0]}_sample_{i}.png"
@@ -309,7 +313,7 @@ def generate_random_image_subset_classify(base_image_path: str, overlay_image_pa
         )
 
 
-def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths: str, output_dir: str, num_samples: int=1, max_overlap_range: tuple=(0.0, 0.6), max_base_coverage_range: tuple=(0.0, 0.8), label='luigi', **kwargs):
+def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths: str, output_dir: str, num_samples: int=1, max_overlap_range: tuple=(0.0, 0.7), max_base_coverage_range: tuple=(0.0, 0.9), label='luigi', **kwargs):
     """
     Generate images with overlays applied to a base image using random_overlay_multiple.
 
@@ -324,12 +328,16 @@ def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths:
         None
     """
     # Create the output directory if it doesn't exist
-    os.makedirs(output_dir + '/images', exist_ok=True)
+    os.makedirs(output_dir + '/luigi', exist_ok=True)
+    
+    overlay_generator = generate_random_filepaths(overlay_image_paths, num_samples)
 
     for i in tqdm(range(num_samples)):
+        print(f"Working on Sample {i}")
+        
         # Generate output image path
         output_file_name = f"{os.path.basename(base_image_path).split('.')[0]}_sample_{i}.png"
-        output_image_path = os.path.join(output_dir + '/images', output_file_name)
+        output_image_path = os.path.join(output_dir + '/luigi', output_file_name)
         output_bbox_path = os.path.join(output_dir, "bounding_boxes.csv")
         
         # Randomly select values within the specified ranges
@@ -340,7 +348,7 @@ def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths:
         # Call random_overlay_multiple with filtered arguments
         random_image = random_overlay_multiple(
             base_image_path=base_image_path,
-            overlay_image_paths=overlay_image_paths,
+            overlay_image_paths=next(overlay_generator),
             output_image_path=output_image_path,
             max_overlap_percentage=max_overlap_percentage, 
             max_base_coverage=max_base_coverage,
@@ -349,7 +357,7 @@ def generate_random_image_subset_bbox(base_image_path: str, overlay_image_paths:
 
         bbox = calculate_bounding_box(random_image["visible_luigi_pixels"])
         
-        save_image_and_bounding_box_for_fastai(bbox, output_image_path, output_bbox_path, label)
+        save_image_and_bounding_box(bbox, output_image_path, output_bbox_path, label)
     
 
 def generate_classification_dataset(image_paths: str, excluded_overlay: str, num_samples: int = 100000, output_dir: str = "data", **kwargs):
@@ -368,7 +376,7 @@ def generate_classification_dataset(image_paths: str, excluded_overlay: str, num
             generate_random_image_subset_classify(base, overlays, not_luigi_dir, num_samples=num_samples//2, **kwargs)
             
 
-def save_image_and_bounding_box_for_fastai(bounding_box, output_image_path, metadata_csv_path, label):
+def save_image_and_bounding_box(bounding_box, output_image_path, metadata_csv_path, label):
     # Prepare metadata
     data = {
         "image_path": output_image_path,
@@ -392,3 +400,50 @@ def generate_bbox_dataset(base_image_path, overlay_image_paths, num_samples = 10
     overlay_permutations = list(itertools.permutations(overlay_image_paths))
     
     generate_random_image_subset_bbox(base_image_path, random.choice(overlay_permutations), output_dir, num_samples, **kwargs)    
+    
+    
+def generate_random_filepaths(filepaths: list, num_samples: int, max_length: int = 12):
+    all_random_lists = []
+    
+    for _ in range(num_samples):
+        # Generate a random length for this sample
+        bounds = random.randint(1, max_length)
+        
+        # Create a randomized list of filepaths
+        random_list = [random.choice(filepaths) for _ in range(bounds)]
+        random.shuffle(random_list)  # Shuffle the list
+        
+        yield random_list
+        
+        
+def generate_background_dataset(num_samples=10, max_overlap_range: tuple=(0.0, 0.6), max_base_coverage_range: tuple=(0.0, 0.8), **kwargs):
+    background_images = ["character_images/wario.png", "character_images/mario.png", "character_images/yoshi.png"]
+    output_dir = "data/background"
+    
+    # Create the output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    overlay_generator = generate_random_filepaths(background_images, num_samples)
+    
+    for i in tqdm(range(num_samples)):
+        background = random.choice(background_images)
+
+        # Generate output image path
+        output_file_name = f"{os.path.basename(background).split('.')[0]}_sample_{i}.png"
+        output_image_path = os.path.join(output_dir, output_file_name)
+        
+        # Randomly select values within the specified ranges
+        max_overlap_percentage = random.uniform(*max_overlap_range)
+        max_base_coverage = random.uniform(*max_base_coverage_range)
+
+        # Call random_overlay_multiple with filtered arguments
+        random_overlay_multiple(
+            base_image_path=background,
+            overlay_image_paths=next(overlay_generator),
+            output_image_path=output_image_path,
+            max_overlap_percentage=max_overlap_percentage, 
+            max_base_coverage=max_base_coverage,
+            max_retries=10,
+            hard_cap=False,
+            **kwargs
+        )
