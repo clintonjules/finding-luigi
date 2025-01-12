@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, Union
-
+import os
+import shutil
+import random
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 import matplotlib.pyplot as plt
 import numpy as np
@@ -290,13 +292,76 @@ def generate_object_detection_dataset(
 
     return coco_annotations_dict
 
+def split_dataset(source_dir, output_dir, split_ratio):
+    """
+    Splits a dataset of images and labels into training and validation sets and creates an annotations.json file.
 
-coco_annotations_dict = generate_object_detection_dataset(
-    num_examples_to_generate=15,
-    num_characters_range=(4, 150),
-    save_dir=Path("data").resolve(),
-    display_plot=False,
-    display_boxes=False,
-    proximity_threshold=5,
-    pad_inches_possible_values=[-0.75],
-)
+    Args:
+        source_dir (str): Path to the source directory containing images and labels.
+        output_dir (str): Path to the output directory for the split dataset.
+        split_ratio (float): Proportion of the data to use for training (e.g., 0.8 for 80% training, 20% validation).
+    """
+    # Ensure source directory exists
+    source_dir = Path(source_dir)
+    if not source_dir.exists():
+        raise FileNotFoundError(f"Source directory {source_dir} does not exist.")
+
+    # Define paths for images
+    images_dir = source_dir / "images"
+    if not images_dir.exists():
+        raise FileNotFoundError(f"Images directory {images_dir} does not exist.")
+
+    # Get all image and label files
+    files = list(images_dir.glob("*.*"))  # Includes both images and labels
+    image_files = [file for file in files if file.suffix in [".png", ".jpg", ".jpeg"]]
+    label_files = [file for file in files if file.suffix == ".txt"]
+
+    # Match images and labels
+    data = []
+    for img in image_files:
+        label = img.with_suffix(".txt")
+        if label in label_files:
+            data.append((str(img), str(label)))
+        else:
+            print(f"Warning: No label found for {img}")
+
+    # Shuffle and split data
+    random.shuffle(data)
+    split_index = int(len(data) * split_ratio)
+    train_data = data[:split_index]
+    val_data = data[split_index:]
+
+    # Create output directories
+    train_dir = Path(output_dir) / "train"
+    val_dir = Path(output_dir) / "val"
+    for folder in [train_dir, val_dir]:
+        folder.mkdir(parents=True, exist_ok=True)
+
+    # Move files to respective directories
+    def move_files(data, dest_dir):
+        for img_path, label_path in data:
+            shutil.copy(img_path, dest_dir)
+            shutil.copy(label_path, dest_dir)
+
+    move_files(train_data, train_dir)
+    move_files(val_data, val_dir)
+
+    print(f"Dataset split completed!")
+    print(f"Training set: {len(train_data)} samples")
+    print(f"Validation set: {len(val_data)} samples")
+
+# coco_annotations_dict = generate_object_detection_dataset(
+#     num_examples_to_generate=15,
+#     num_characters_range=(4, 150),
+#     save_dir=Path("data").resolve(),
+#     display_plot=False,
+#     display_boxes=False,
+#     proximity_threshold=5,
+#     pad_inches_possible_values=[-0.75],
+# )
+
+# split_dataset(
+#     source_dir="data",  # Replace with your dataset directory
+#     output_dir="data",  # Replace with the desired output directory
+#     split_ratio=0.8  # 80% train, 20% validation
+# )
