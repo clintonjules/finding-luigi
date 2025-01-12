@@ -447,3 +447,174 @@ def generate_background_dataset(num_samples=10, max_overlap_range: tuple=(0.0, 0
             hard_cap=False,
             **kwargs
         )
+        
+        
+
+# I hate this so much
+# Here's some more broken code here
+import csv
+import random
+from PIL import Image, ImageDraw
+import os
+import numpy as np
+
+
+# Function to calculate bounding box for visible (non-transparent) pixels
+def get_visible_bounding_box(image: Image.Image, x_offset: int, y_offset: int):
+    image_array = np.array(image)
+    alpha_channel = image_array[:, :, 3]
+    non_transparent_pixels = np.argwhere(alpha_channel > 0)
+    if non_transparent_pixels.size == 0:
+        return None  # No visible pixels
+    y_min, x_min = non_transparent_pixels.min(axis=0)
+    y_max, x_max = non_transparent_pixels.max(axis=0)
+    return x_min + x_offset, y_min + y_offset, x_max + x_offset, y_max + y_offset
+
+
+# Function to crop an image to fit within canvas bounds
+def crop_to_canvas(image, x, y, canvas_width, canvas_height):
+    img_width, img_height = image.size
+
+    # Calculate cropping box
+    left = max(0, x)
+    top = max(0, y)
+    right = min(canvas_width, x + img_width)
+    bottom = min(canvas_height, y + img_height)
+
+    # Crop the image
+    cropped_image = image.crop((left - x, top - y, right - x, bottom - y))
+
+    # Return the cropped image and adjusted coordinates
+    return cropped_image, (left, top)
+
+
+# Function to update visibility mask after placing a character
+def update_visibility_mask(visibility_mask, character_mask, x, y):
+    canvas_height, canvas_width = visibility_mask.shape
+    char_height, char_width = character_mask.shape
+
+    # Calculate valid region of overlap
+    top = max(0, y)
+    left = max(0, x)
+    bottom = min(canvas_height, y + char_height)
+    right = min(canvas_width, x + char_width)
+
+    char_top = top - y
+    char_left = left - x
+    char_bottom = bottom - y
+    char_right = right - x
+
+    # Update visibility mask
+    visibility_mask[top:bottom, left:right] |= character_mask[char_top:char_bottom, char_left:char_right]
+
+
+# Function to calculate the visibility of Luigi based on the visibility mask
+def calculate_luigi_visibility(visibility_mask, luigi_mask, x, y):
+    canvas_height, canvas_width = visibility_mask.shape
+    luigi_height, luigi_width = luigi_mask.shape
+
+    # Calculate valid region of overlap
+    top = max(0, y)
+    left = max(0, x)
+    bottom = min(canvas_height, y + luigi_height)
+    right = min(canvas_width, x + luigi_width)
+
+    luigi_top = top - y
+    luigi_left = left - x
+    luigi_bottom = bottom - y
+    luigi_right = right - x
+
+    # Calculate visibility
+    visible_area = (
+        luigi_mask[luigi_top:luigi_bottom, luigi_left:luigi_right]
+        & ~visibility_mask[top:bottom, left:right]
+    )
+    return np.count_nonzero(visible_area) / np.count_nonzero(luigi_mask)
+
+
+# Function to generate 720x720 image samples and save bounding box data to CSV
+def generate_image_samples_with_bboxes(
+    output_folder,
+    csv_path,
+    base_image_size=(720, 720),
+    num_samples=10,
+    min_other_characters=5,
+    max_other_characters=15,
+    min_coverage=0.2,
+    max_coverage=0.8,
+    draw_bounding_box=False,
+):
+    luigi_folder = os.path.join(output_folder, "luigi")
+    background_folder = os.path.join(output_folder, "background")
+    os.makedirs(luigi_folder, exist_ok=True)
+    os.makedirs(background_folder, exist_ok=True)
+
+    character_paths = {
+        "mario": "character_images/mario.png",
+        "luigi": "character_images/luigi.png",
+        "wario": "character_images/wario.png",
+        "yoshi": "character_images/yoshi.png",
+    }
+    characters = {}
+    for name, path in character_paths.items():
+        img = Image.open(path).convert("RGBA")
+        img.thumbnail((round(img.width * 0.1), round(img.height * 0.1)))
+        characters[name] = img
+
+    luigi_image = characters.pop("luigi")
+    luigi_mask = np.array(luigi_image)[:, :, 3] > 0  # Non-transparent pixels
+
+    with open(csv_path, mode="w", newline="") as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["image_id", "character", "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2"])
+
+        for sample_idx in range(num_samples):
+            canvas_with_luigi = Image.new("RGBA", base_image_size, (0, 0, 0, 255))
+            canvas_without_luigi = Image.new("RGBA", base_image_size, (0, 0, 0, 255))
+            visibility_mask = np.zeros(base_image_size[::-1], dtype=bool)  # Visibility mask
+            luigi_bbox = None
+
+            # Place Luigi first to ensure visibility
+            while True:
+                luigi_x = random.randint(-luigi_image.width, base_image_size[0])
+                luigi_y = random.randint(-luigi_image.height, base_image_size[1])
+                luigi_coverage = calculate_luigi_visibility(
+                    visibility_mask, luigi_mask, luigi_x, luigi_y
+                )
+                if min_coverage <= luigi_coverage <= max_coverage:
+                    break
+
+            cropped_luigi, (cropped_x, cropped_y) = crop_to_canvas(
+                luigi_image, luigi_x, luigi_y, base_image_size[0], base_image_size[1]
+            )
+            canvas_with_luigi.paste(cropped_luigi, (cropped_x, cropped_y), cropped_luigi)
+            luigi_bbox = get_visible_bounding_box(cropped_luigi, cropped_x, cropped_y)
+            update_visibility_mask(visibility_mask, luigi_mask, cropped_x, cropped_y)
+
+            if luigi_bbox:
+                writer.writerow([f"sample_{sample_idx}_with_luigi", "luigi", *luigi_bbox])
+
+            # Place other characters
+            num_characters = random.randint(min_other_characters, max_other_characters)
+            for char_idx in range(num_characters):
+                char_name, char_img = random.choice(list(characters.items()))
+                char_mask = np.array(char_img)[:, :, 3] > 0  # Non-transparent pixels
+                char_width, char_height = char_img.size
+                x = random.randint(-char_width, base_image_size[0])
+                y = random.randint(-char_height, base_image_size[1])
+                cropped_img, (cropped_x, cropped_y) = crop_to_canvas(
+                    char_img, x, y, base_image_size[0], base_image_size[1]
+                )
+                canvas_with_luigi.paste(cropped_img, (cropped_x, cropped_y), cropped_img)
+                canvas_without_luigi.paste(cropped_img, (cropped_x, cropped_y), cropped_img)
+                bbox = (cropped_x, cropped_y, cropped_x + cropped_img.width, cropped_y + cropped_img.height)
+                writer.writerow([f"sample_{sample_idx}_without_luigi", char_name, bbox[0], bbox[1], bbox[2], bbox[3]])
+                update_visibility_mask(visibility_mask, char_mask, cropped_x, cropped_y)
+
+            # Draw bounding box around Luigi as the last step
+            if draw_bounding_box and luigi_bbox:
+                draw = ImageDraw.Draw(canvas_with_luigi)
+                draw.rectangle(luigi_bbox, outline="red", width=3)
+
+            canvas_with_luigi.save(os.path.join(luigi_folder, f"sample_{sample_idx}_with_luigi.png"), "PNG")
+            canvas_without_luigi.save(os.path.join(background_folder, f"sample_{sample_idx}_without_luigi.png"), "PNG")
