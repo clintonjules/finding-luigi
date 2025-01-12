@@ -1,5 +1,6 @@
 from generate_dataset import *
 import os
+import yaml
 
 def main():
     print("Generating Dataset...")
@@ -37,3 +38,24 @@ def main():
     print("Dataset Generated!")
     
     
+    print("Creating yaml file...")
+
+
+    # Load environment variables
+    train_dir = os.getenv("TRAIN_DIR")  # Replace with default path if env not set
+    val_dir = os.getenv("VAL_DIR")  # Replace with default path if env not set
+
+    # Define the YAML structure
+    data = {
+        "train": train_dir,
+        "val": val_dir,
+        "nc": 4,
+        "names": ["mario", "luigi", "wario", "yoshi"]
+    }
+
+    # Write to a YAML file
+    yaml_path = "src/data.yaml"  # Change the filename/path as needed
+    with open(yaml_path, "w") as yaml_file:
+        yaml.dump(data, yaml_file, default_flow_style=False)
+
+    print(f"YAML file created at {yaml_path}")
