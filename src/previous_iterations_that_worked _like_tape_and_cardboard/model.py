@@ -131,8 +131,8 @@ def train(num_classes=2, num_epochs=5, batch_size=4, learning_rate=0.005):
     bounding_boxes_data = pd.read_csv(bounding_boxes_path)
 
     # Image directories
-    luigi_image_dir = 'data/luigi_images'
-    background_image_dir = 'data/background_images'  # Add background images here
+    luigi_image_dir = 'data/luigi'
+    background_image_dir = 'data/background'  # Add background images here
 
     # Transforms
     transforms = T.Compose([T.ToTensor()])
@@ -154,5 +154,3 @@ def train(num_classes=2, num_epochs=5, batch_size=4, learning_rate=0.005):
     model_save_path = 'find_luigi_model.pth'
     torch.save(model.state_dict(), model_save_path)
     print(f"Model saved to {model_save_path}")
-
-train(2, 5, 4, .005)

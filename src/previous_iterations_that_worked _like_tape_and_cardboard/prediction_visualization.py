@@ -79,11 +79,7 @@ def predict_and_visualize(image_path, model, device, threshold=0.5):
 
 
 # Main execution
-def visualize():
-    # Parameters
-    num_classes = 2  # 'luigi' + background
-    model_path = "fasterrcnn_luigi.pth"  # Path to the saved model
-    image_path = "data/images/luigi_sample_0.png"  # Path to the image to predict
+def visualize(image_path: str, num_classes=2, model_path="find_luigi_model.pth"):
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     # Load the trained model
@@ -93,4 +89,4 @@ def visualize():
     predict_and_visualize(image_path, model, device, threshold=0.5)
 
 
-visualize()
+visualize(image_path="test.png")

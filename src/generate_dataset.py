@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, Union
-import os
 import shutil
 import random
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
