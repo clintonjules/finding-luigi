@@ -8,7 +8,7 @@ def data():
     print("Creating images and annotations...")
     
     coco_annotations_dict = generate_object_detection_dataset(
-        num_examples_to_generate=1_000_000,
+        num_examples_to_generate=100000,
         num_characters_range=(4, 150),
         save_dir=Path("data").resolve(),
         display_plot=False,
