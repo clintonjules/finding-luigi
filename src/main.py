@@ -8,7 +8,7 @@ def data():
     print("Creating images and annotations...")
     
     coco_annotations_dict = generate_object_detection_dataset(
-        num_examples_to_generate=1_000_000,
+        num_examples_to_generate=10000,
         num_characters_range=(4, 150),
         save_dir=Path("data").resolve(),
         display_plot=False,
@@ -66,7 +66,7 @@ def train():
     print("Training model...")
     
     # yolov5l.pt
-    os.system("python src/yolov5/train.py --data src/data.yaml --epochs 100 --weights '' --cfg yolov5l.yaml --batch-size -1 --project model --name finding_luigi")
+    os.system("python src/yolov5/train.py --data src/data.yaml --epochs 50 --weights '' --cfg yolov5m.yaml --batch-size -1 --project model --name finding_luigi")
     
     print("Model trained")
     print("-" * 100)
