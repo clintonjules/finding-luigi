@@ -76,7 +76,7 @@ def find_luigi(video):
     print("-" * 100)
     print("Searching for Luigi...")
     
-    os.system(f"python src/yolov5/detect.py --weights model/finding_luigi/weights/best.pt --source {video} --conf-thres 0.7 --iou-thres 0.5 --save-txt --save-conf --project found_ouput --name luigi_detection --classes 1")
+    os.system(f"python src/yolov5/detect.py --weights model/finding_luigi/weights/best.pt --source {video} --conf-thres 0.8 --iou-thres 0.9 --save-txt --save-conf --project found_ouput --name luigi_detection --classes 1")
     
     print("Search completed")
     print("-" * 100)
